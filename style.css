@@ -11,3 +11,6 @@ body.booking-modal-open{overflow:hidden}.booking-overlay{position:fixed;inset:0;
 
 /* Grade semanal de horários */
 .weekly-day{padding:14px 0;border-bottom:1px solid #30484b}.weekly-day h4{margin:0 0 10px}.weekly-hours{display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:8px}.weekly-hour{padding:11px 6px;border:1px solid #426468;background:#1c3033;color:#d5e9e9;border-radius:9px}.weekly-hour.selected{background:#168d96;color:#fff;border-color:#5de2e4;box-shadow:inset 0 0 0 1px #5de2e4}#saveWeekly{margin-top:20px;width:100%}@media(max-width:600px){.weekly-hours{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.weekly-hour{font-size:12px;padding:10px 3px}}
+
+/* Seletor horizontal de dias para equipe e clientes */
+.day-tabs{display:flex;gap:9px;overflow-x:auto;padding:10px 2px 15px;scroll-snap-type:x proximity}.day-tab{flex:0 0 auto;min-width:102px;padding:14px 12px;border-radius:12px;background:#203437;border:1px solid #406369;color:#e6f4f4;scroll-snap-align:start}.day-tab.selected{background:#138f9b;border-color:#72ebeb;color:white;box-shadow:0 0 0 2px rgba(44,203,211,.18)}#staffDayHours{padding-top:8px}#saveDayHours{margin-top:18px;width:100%}.sold-out{border:1px solid #7d5944;background:#332820;padding:14px;border-radius:12px;color:#ffe4cb}@media(max-width:600px){.day-tab{min-width:92px;padding:12px 8px}}
