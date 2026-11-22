@@ -18,8 +18,26 @@ export default async function handler(req,res){
   const mine=await db.collection('users').doc(uid).get();if(!mine.exists)return bad(res,401,'Conta não encontrada');
   const me=mine.data(),isAdmin=me.isAdmin===true&&me.role==='admin',isBarber=me.role==='barber';
   const col=req.query.collection,id=req.query.id;
-  if(!['users','services','slots','appointments','availability','weeklySchedule'].includes(col))return bad(res,400,'Coleção inválida');
+  if(!['users','services','slots','appointments','availability','weeklySchedule','daySchedule'].includes(col))return bad(res,400,'Coleção inválida');
   const ref=db.collection(col),body=req.body||{};
+  if(col==='daySchedule'){
+   const target=req.method==='GET'?req.query.barberId:body.barberId;
+   const date=req.method==='GET'?req.query.date:body.date;
+   if(typeof target!=='string'||target.length>150||!validDate(date))return bad(res,400,'Barbeiro e data obrigatórios');
+   const barberDoc=await db.collection('users').doc(target).get();
+   if(!barberDoc.exists||barberDoc.data().role!=='barber')return bad(res,404,'Barbeiro não encontrado');
+   const scheduleRef=db.collection('daySchedules').doc(target+'_'+date);
+   if(req.method==='GET'){
+    const snap=await scheduleRef.get();
+    return res.json({barberId:target,date,hours:snap.exists?snap.data().hours:[],configured:snap.exists});
+   }
+   if(req.method==='POST'||req.method==='PUT'){
+    if(!isAdmin&&(!isBarber||uid!==target))return bad(res,403,'Sem permissão');
+    if(!Array.isArray(body.hours)||body.hours.length>24||body.hours.some(h=>!validTime(h)||minutes(h)%60!==0))return bad(res,400,'Horários inválidos');
+    await scheduleRef.set({barberId:target,date,hours:[...new Set(body.hours)].sort(),updatedAt:admin.firestore.FieldValue.serverTimestamp()});
+    return res.json({ok:true});
+   }
+  }
   if(col==='weeklySchedule'){
    if(req.method==='GET'){
     const target=req.query.barberId||uid;
@@ -56,9 +74,9 @@ export default async function handler(req,res){
     db.collection('appointments').where('barberId','==',barberId).get()
    ]);
    if(!service.exists||service.data().active===false||!barber.exists||barber.data().role!=='barber')return bad(res,404,'Procedimento ou barbeiro indisponível');
-   const weekly=await db.collection('weeklySchedules').doc(barberId).get();
+   const [weekly,daySchedule]=await Promise.all([db.collection('weeklySchedules').doc(barberId).get(),db.collection('daySchedules').doc(barberId+'_'+date).get()]);
    const weekday=new Date(date+'T12:00:00Z').getUTCDay();
-   const weeklyHours=weekly.data()?.days?.[weekday]||[];
+   const weeklyHours=daySchedule.exists?(daySchedule.data()?.hours||[]):(weekly.data()?.days?.[weekday]||[]);
    const duration=Number(service.data().duration);
    const occupied=appointmentsForDay.docs.map(d=>d.data()).filter(a=>a.date===date&&a.status!=='cancelled').map(a=>({start:minutes(a.time),end:minutes(a.time)+Number(a.duration||0)})).sort((a,b)=>a.start-b.start);
    const todayBR=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
@@ -137,14 +155,16 @@ export default async function handler(req,res){
     const weeklyMatch=/^weekly:([^:]+):(\\d{4}-\\d{2}-\\d{2}):(\\d{2}:\\d{2})$/.exec(slotId);
     const slotRef=weeklyMatch?null:db.collection('slots').doc(slotId),serviceRef=db.collection('services').doc(serviceId),appointmentRef=ref.doc();
     await db.runTransaction(async tx=>{
-     const scheduleRef=weeklyMatch?db.collection('weeklySchedules').doc(weeklyMatch[1]):null;
-     const [slot,service]=await Promise.all([tx.get(slotRef||scheduleRef),tx.get(serviceRef)]);
-     if(!slot.exists||!service.exists||(!weeklyMatch&&slot.data().active===false)||service.data().active===false)throw Error('Serviço ou horário indisponível');
-     let s=slot.data(),v=service.data(),start=minutes(time),duration=v.duration;
+     const scheduleRef=weeklyMatch?db.collection('daySchedules').doc(weeklyMatch[1]+'_'+weeklyMatch[2]):null;
+     const fallbackRef=weeklyMatch?db.collection('weeklySchedules').doc(weeklyMatch[1]):null;
+     const [slot,service,fallback]=await Promise.all([tx.get(slotRef||scheduleRef),tx.get(serviceRef),fallbackRef?tx.get(fallbackRef):Promise.resolve(null)]);
+     if((!slot.exists&&!weeklyMatch)||!service.exists||(!weeklyMatch&&slot.data().active===false)||service.data().active===false)throw Error('Serviço ou horário indisponível');
+     let s=slot.data()||{},v=service.data(),start=minutes(time),duration=v.duration;
      if(weeklyMatch){
       const [barberId,date,hour]=weeklyMatch.slice(1);
       const day=new Date(date+'T12:00:00Z').getUTCDay();
-      if(time!==hour||!s.days?.[day]?.includes(hour))throw Error('Horário não autorizado');
+      const allowed=slot.exists?s.hours:fallback?.data()?.days?.[day];
+      if(time!==hour||!allowed?.includes(hour))throw Error('Horário não autorizado');
       s={barberId,date,time:hour,duration:60};
      }
      if(start<minutes(s.time)||(!weeklyMatch&&start+duration>minutes(s.time)+s.duration))throw Error('Horário incompatível');
