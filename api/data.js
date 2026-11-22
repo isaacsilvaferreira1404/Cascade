@@ -8,6 +8,15 @@ const clean=d=>{const {passwordHash,...rest}=d;return rest};
 const validTime=t=>typeof t==='string'&&/^([01]\d|2[0-3]):[0-5]\d$/.test(t);
 const validDate=d=>typeof d==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(d);
 const minutes=t=>Number(t.slice(0,2))*60+Number(t.slice(3,5));
+const clubCovers=(member,service)=>{
+ if(member?.clubActive!==true)return false;
+ const name=String(service||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+ const cut=name==='corte',beard=name==='barba'||name==='barba desenhada',combo=name==='corte e barba'||name==='corte + barba';
+ if(member.club==='cabelo')return cut;
+ if(member.club==='barba')return beard;
+ if(member.club==='completo')return cut||beard||combo;
+ return false;
+};
 const error=e=>{console.error('Cascade API',e.code||e.message);return 'Erro ao processar solicitação'};
 export default async function handler(req,res){
  res.setHeader('Cache-Control','no-store');
@@ -169,7 +178,7 @@ export default async function handler(req,res){
      if(start<minutes(s.time)||(!weeklyMatch&&start+duration>minutes(s.time)+s.duration))throw Error('Horário incompatível');
      const locks=Array.from({length:Math.ceil(duration/5)},(_,i)=>db.collection('bookingLocks').doc(s.barberId+'_'+s.date+'_'+(start+i*5)));
      const docs=await Promise.all(locks.map(x=>tx.get(x)));if(docs.some(x=>x.exists))throw Error('Horário ocupado');
-     tx.create(appointmentRef,{clientId:uid,clientName:me.name||'Cliente',clientPhone:me.phone||'',barberId:s.barberId,slotId,date:s.date,time,service:v.name,price:me.clubActive===true&&me.club==='cabelo'&&v.name==='Corte'?0:v.price,duration,status:'scheduled',createdAt:admin.firestore.FieldValue.serverTimestamp()});
+     tx.create(appointmentRef,{clientId:uid,clientName:me.name||'Cliente',clientPhone:me.phone||'',barberId:s.barberId,slotId,date:s.date,time,service:v.name,price:clubCovers(me,v.name)?0:v.price,clubCovered:clubCovers(me,v.name),duration,status:'scheduled',createdAt:admin.firestore.FieldValue.serverTimestamp()});
      locks.forEach((l,i)=>tx.create(l,{appointmentId:appointmentRef.id,barberId:s.barberId,date:s.date,clientId:uid,minute:start+i*5}));
     });return res.status(201).json({id:appointmentRef.id});
    }
