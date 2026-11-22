@@ -109,7 +109,7 @@ export default async function handler(req,res){
    if(col==='users'&&isAdmin){const docs=await ref.limit(500).get();return res.json(docs.docs.map(d=>({id:d.id,...clean(d.data())})))}
    let q=ref;if(col==='users')q=q.where('role','==','barber');
    if(col==='appointments'&&!isAdmin)q=q.where(isBarber?'barberId':'clientId','==',uid);
-   const docs=await q.limit(500).get();return res.json(docs.docs.map(d=>({id:d.id,...clean(d.data())})));
+   const docs=await q.limit(500).get();const rows=docs.docs.map(d=>({id:d.id,...clean(d.data())}));if(col==='appointments'&&(isAdmin||isBarber)){const missing=[...new Set(rows.filter(a=>!a.clientName&&a.clientId).map(a=>a.clientId))];const profiles=await Promise.all(missing.map(clientId=>db.collection('users').doc(clientId).get()));const names=new Map(profiles.map((p,i)=>[missing[i],p.exists?p.data().name:'Cliente']));return res.json(rows.map(a=>({...a,clientName:a.clientName||names.get(a.clientId)||'Cliente'})))}return res.json(rows);
   }
   if(col==='users'&&req.method==='PATCH'){
    if(id===uid&&typeof body.name==='string'&&body.name.trim().length>=2&&typeof body.phone==='string'&&body.phone.length<=20){await ref.doc(uid).update({name:body.name.trim().slice(0,80),phone:body.phone});return res.json({ok:true})}
