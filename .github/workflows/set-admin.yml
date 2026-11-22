@@ -1,0 +1,19 @@
+name: Configure Cascade administrator
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  configure-admin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install Firebase Admin SDK
+        run: npm install --no-save firebase-admin
+      - name: Grant administrator access
+        env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: node scripts/set-admin.cjs
