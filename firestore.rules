@@ -2,12 +2,12 @@ rules_version = '2';
 service cloud.firestore {
  match /databases/{database}/documents {
   function signed(){return request.auth != null;}
-  function admin(){return signed() && request.auth.token.email == 'isaacsilvaferreira1234@gmail.com' && request.auth.token.email_verified == true;}
+  function admin(){return signed() && request.auth.token.email == 'isaacsilvaferreira1234@gmail.com' && request.auth.token.email_verified == true && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAdmin',false) == true;}
   function barber(){return signed() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'barber';}
   function manages(uid){return admin() || (signed() && request.auth.uid == uid && barber());}
   match /users/{id} {
    allow read: if signed() && (request.auth.uid == id || admin() || resource.data.role == 'barber' || (resource.data.role == 'client' && barber()));
-   allow create: if signed() && request.resource.data.keys().hasOnly(['name','email','role','club','clubActive']) && request.resource.data.club == 'none' && request.resource.data.clubActive == false && ((request.resource.data.role == 'client' && (id == request.auth.uid && request.resource.data.email == request.auth.token.email)) || (admin() && request.resource.data.role == 'barber'));
+   allow create: if signed() && request.resource.data.keys().hasOnly(['name','email','role','club','clubActive','phone','isAdmin']) && request.resource.data.get('isAdmin',false) == false && request.resource.data.club == 'none' && request.resource.data.clubActive == false && ((request.resource.data.role == 'client' && (id == request.auth.uid && request.resource.data.email == request.auth.token.email)) || (admin() && request.resource.data.role == 'barber'));
    allow update: if admin() || (signed() && id == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name','phone']));
   }
   match /services/{id} {allow read: if true; allow write: if admin();}

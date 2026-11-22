@@ -225,6 +225,8 @@ async function load() {
       name: registrationName || user.displayName || "Cliente",
       email: user.email,
       role: "client",
+      isAdmin: false,
+      phone: "",
       club: "none",
       clubActive: false,
     };
@@ -233,7 +235,7 @@ async function load() {
   registrationName = "";
   const token = await user.getIdTokenResult();
   profile.role =
-    token.claims.email === adminEmail && token.claims.email_verified === true
+    profile.isAdmin === true && token.claims.email === adminEmail && token.claims.email_verified === true
       ? "admin"
       : profile.role === "barber"
         ? "barber"
