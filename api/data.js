@@ -87,8 +87,10 @@ export default async function handler(req,res){
     if(status==='completed'&&!isAdmin&&x.barberId!==uid)return bad(res,403,'Sem permissão');
     await db.runTransaction(async tx=>{
      const latest=await tx.get(d.ref);if(latest.data()?.status!=='scheduled')throw Error('Agendamento já atualizado');
+     let held=[];
+     if(status==='cancelled'){const start=minutes(x.time);const locks=Array.from({length:Math.ceil(x.duration/5)},(_,i)=>db.collection('bookingLocks').doc(x.barberId+'_'+x.date+'_'+(start+i*5)));held=await Promise.all(locks.map(l=>tx.get(l)))}
      tx.update(d.ref,{status});
-     if(status==='cancelled'){const start=minutes(x.time);const locks=Array.from({length:Math.ceil(x.duration/5)},(_,i)=>db.collection('bookingLocks').doc(x.barberId+'_'+x.date+'_'+(start+i*5)));for(const l of locks){const snap=await tx.get(l);if(snap.exists&&snap.data().appointmentId===id)tx.delete(l)}}
+     held.forEach(snap=>{if(snap.exists&&snap.data().appointmentId===id)tx.delete(snap.ref)});
     });return res.json({ok:true});
    }
   }
