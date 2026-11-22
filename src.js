@@ -693,11 +693,27 @@ function staff() {
 }
 function admin() {
   el("admin").innerHTML =
-    '<p>Administrador: gerencie barbeiros, procedimentos e assinaturas.</p><h4>Novo procedimento</h4><form id="serviceForm"><input id="serviceName" placeholder="Nome do procedimento" required><input id="servicePrice" type="number" min="0" step="0.01" placeholder="Preço em R$" required><input id="serviceDuration" type="number" min="5" max="480" placeholder="Duração em minutos" required><button>Adicionar procedimento</button></form><h4>Definir barbeiro e jornada</h4><form id="roles"><input type="email" id="target" placeholder="E-mail do usuário já cadastrado" required><select id="role"><option value="client">Cliente</option><option value="barber">Barbeiro</option></select><input type="time" id="workStart" value="08:00"><input type="time" id="workEnd" value="20:00"><select id="club"><option value="none">Sem clube</option>' +
+    '<p>Administrador: gerencie barbeiros, procedimentos e assinaturas.</p><h4>Configurações do administrador</h4><p class="muted">Permissões salvas no Firestore. Apenas administradores podem modificar funções de outros usuários.</p><form id="adminAccessForm"><label>E-mail da conta cadastrada<input id="adminAccessEmail" type="email" required placeholder="E-mail do usuário"></label><label>Permissão<select id="adminAccessValue"><option value="true">Administrador (true)</option><option value="false">Usuário comum (false)</option></select></label><button type="submit">Salvar permissão</button><p id="adminAccessStatus" role="status"></p></form><h4>Novo procedimento</h4><form id="serviceForm"><input id="serviceName" placeholder="Nome do procedimento" required><input id="servicePrice" type="number" min="0" step="0.01" placeholder="Preço em R$" required><input id="serviceDuration" type="number" min="5" max="480" placeholder="Duração em minutos" required><button>Adicionar procedimento</button></form><h4>Definir barbeiro e jornada</h4><form id="roles"><input type="email" id="target" placeholder="E-mail do usuário já cadastrado" required><select id="role"><option value="client">Cliente</option><option value="barber">Barbeiro</option></select><input type="time" id="workStart" value="08:00"><input type="time" id="workEnd" value="20:00"><select id="club"><option value="none">Sem clube</option>' +
     Object.entries(plans)
       .map(([k, p]) => '<option value="' + k + '">' + p.name + "</option>")
       .join("") +
     '</select><label><input type="checkbox" id="active"> Assinatura ativa</label><button>Atualizar cadastro</button></form><p class="muted">Use este formulário para alterar a função ou assinatura de uma conta existente.</p>';
+  el("adminAccessForm").onsubmit = async (e) => {
+    e.preventDefault();
+    const status = el("adminAccessStatus");
+    const email = el("adminAccessEmail").value.trim().toLowerCase();
+    const isAdmin = el("adminAccessValue").value === "true";
+    status.textContent = "Salvando...";
+    try {
+      if (email === user.email?.toLowerCase() && !isAdmin) throw Error("Não é permitido retirar sua própria permissão de administrador.");
+      const results = await getDocs(query(collection(db, "users"), where("email", "==", email)));
+      if (results.empty) throw Error("Conta não encontrada no Firestore.");
+      await updateDoc(results.docs[0].ref, { isAdmin });
+      status.textContent = "Permissão atualizada no Firestore.";
+    } catch (err) {
+      status.textContent = err.message || "Não foi possível atualizar a permissão.";
+    }
+  };
   el("serviceForm").onsubmit = async (e) => {
     e.preventDefault();
     try {
