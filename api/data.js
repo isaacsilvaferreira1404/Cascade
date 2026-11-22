@@ -85,18 +85,17 @@ export default async function handler(req,res){
    for(const w of windows.docs){
     const slot=w.data();if(slot.date!==date||slot.active===false||!validTime(slot.time))continue;
     const start=minutes(slot.time),end=start+Number(slot.duration);
-    for(let t=start;t+duration<=end&&t<1440;){
+    for(let t=Math.ceil(start/60)*60;t+duration<=end&&t<1440;t+=60){
      const collision=occupied.find(a=>t<a.end&&t+duration>a.start);
-     if(collision){t=Math.ceil(collision.end/5)*5;continue}
+     if(collision)continue
      if(date>=todayBR&&(date!==todayBR||t>minutes(nowBR))){
       const time=String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');
       if(!seen.has(time)){seen.add(time);output.push({slotId:w.id,time})}
      }
-     t+=15;
-    }
+     }
    }
    for(const hour of weeklyHours){
-    if(!validTime(hour))continue;
+    if(!validTime(hour)||minutes(hour)%60!==0)continue;
     const start=minutes(hour);
     if(occupied.some(a=>start<a.end&&start+duration>a.start))continue;
     if(date<todayBR||(date===todayBR&&start<=minutes(nowBR)))continue;
@@ -151,7 +150,7 @@ export default async function handler(req,res){
   if(col==='appointments'){
    if(req.method==='POST'){
     const {slotId,time,serviceId}=body;
-    if(typeof slotId!=='string'||!validTime(time)||typeof serviceId!=='string')return bad(res,400,'Dados inválidos');
+    if(typeof slotId!=='string'||!validTime(time)||minutes(time)%60!==0||typeof serviceId!=='string')return bad(res,400,'Dados inválidos');
     const weeklyMatch=/^weekly:([^:]+):(\\d{4}-\\d{2}-\\d{2}):(\\d{2}:\\d{2})$/.exec(slotId);
     const slotRef=weeklyMatch?null:db.collection('slots').doc(slotId),serviceRef=db.collection('services').doc(serviceId),appointmentRef=ref.doc();
     await db.runTransaction(async tx=>{
@@ -170,7 +169,7 @@ export default async function handler(req,res){
      if(start<minutes(s.time)||(!weeklyMatch&&start+duration>minutes(s.time)+s.duration))throw Error('Horário incompatível');
      const locks=Array.from({length:Math.ceil(duration/5)},(_,i)=>db.collection('bookingLocks').doc(s.barberId+'_'+s.date+'_'+(start+i*5)));
      const docs=await Promise.all(locks.map(x=>tx.get(x)));if(docs.some(x=>x.exists))throw Error('Horário ocupado');
-     tx.create(appointmentRef,{clientId:uid,barberId:s.barberId,slotId,date:s.date,time,service:v.name,price:me.clubActive===true&&me.club==='cabelo'&&v.name==='Corte'?0:v.price,duration,status:'scheduled',createdAt:admin.firestore.FieldValue.serverTimestamp()});
+     tx.create(appointmentRef,{clientId:uid,clientName:me.name||'Cliente',clientPhone:me.phone||'',barberId:s.barberId,slotId,date:s.date,time,service:v.name,price:me.clubActive===true&&me.club==='cabelo'&&v.name==='Corte'?0:v.price,duration,status:'scheduled',createdAt:admin.firestore.FieldValue.serverTimestamp()});
      locks.forEach((l,i)=>tx.create(l,{appointmentId:appointmentRef.id,barberId:s.barberId,date:s.date,clientId:uid,minute:start+i*5}));
     });return res.status(201).json({id:appointmentRef.id});
    }
@@ -190,5 +189,5 @@ export default async function handler(req,res){
    }
   }
   return bad(res,403,'Operação não permitida');
- }catch(e){return bad(res,e.message==='Horário ocupado'||e.message==='Horário incompatível'||e.message==='Agendamento já atualizado'?409:500,error(e))}
+ }catch(e){return bad(res,['Horário ocupado','Horário incompatível','Agendamento já atualizado','Horário não autorizado','Serviço ou horário indisponível'].includes(e.message)?409:500,['Horário ocupado','Horário incompatível','Agendamento já atualizado','Horário não autorizado','Serviço ou horário indisponível'].includes(e.message)?e.message:error(e))}
 }
