@@ -116,7 +116,7 @@ function shell(content) {
     '<header><div class="brand"><span>✂</span> CAS<span>CADE</span><small>BARBEARIA · DESDE 2016</small></div><nav><a href="#" id="home">Início</a><a href="#club">Cascade Club</a><button id="authBtn">' +
     (user ? "Minha conta" : "Entrar") +
     "</button>" +
-    (profile?.role === "admin" ? '<button id="manageLoginsBtn" type="button">Gerenciar logins</button>' : "") +
+    '<button id="manageLoginsBtn" type="button">Gerenciar logins</button>' +
     "</nav></header><main>" +
     content +
     "</main><footer>CASCADE BARBEARIA · ESTILO E PRECISÃO</footer>";
@@ -125,7 +125,17 @@ function shell(content) {
     render();
   };
   el("authBtn").onclick = () => (user ? accountView() : authView());
-  if (el("manageLoginsBtn")) el("manageLoginsBtn").onclick = () => { accountView(); el("openAdmin")?.click(); el("adminLogins")?.scrollIntoView({behavior:"smooth",block:"start"}); };
+  if (el("manageLoginsBtn")) el("manageLoginsBtn").onclick = () => {
+    if (!user) { authView(); return; }
+    if (profile?.role !== "admin") {
+      accountView();
+      notice("Acesso restrito. Para gerenciar logins, sua conta precisa ter isAdmin: true no Firestore e e-mail administrativo verificado.");
+      return;
+    }
+    accountView();
+    el("openAdmin")?.click();
+    el("adminLogins")?.scrollIntoView({behavior:"smooth",block:"start"});
+  };
 }
 function authView() {
   loginScreen({
