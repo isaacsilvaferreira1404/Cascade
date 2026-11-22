@@ -14,6 +14,12 @@ service cloud.firestore {
  allow read: if true;
  allow create,update,delete: if role('admin');
  }
+ match /bookingLocks/{id}{
+ allow read: if signed();
+ allow create: if signed() && request.resource.data.clientId==request.auth.uid && request.resource.data.barberId is string && request.resource.data.date is string && request.resource.data.minute is int && request.resource.data.appointmentId is string && id==request.resource.data.barberId+'_'+request.resource.data.date+'_'+request.resource.data.minute;
+ allow delete: if signed() && (resource.data.clientId==request.auth.uid || role('admin'));
+ allow update: if false;
+ }
  match /slots/{id}{
  allow read: if signed();
  allow create: if staff()&&(role('admin')||request.resource.data.barberId==request.auth.uid)&&request.resource.data.booked==false;
@@ -26,7 +32,7 @@ service cloud.firestore {
  }
  match /appointments/{id}{
  allow read: if signed()&&(role('admin')||resource.data.clientId==request.auth.uid||resource.data.barberId==request.auth.uid);
- allow create: if signed()&&request.resource.data.clientId==request.auth.uid&&request.resource.data.status=='scheduled'&&request.resource.data.keys().hasAll(['slotId','barberId','date','time','service','price']);
+ allow create: if signed()&&request.resource.data.clientId==request.auth.uid&&request.resource.data.status=='scheduled'&&request.resource.data.keys().hasAll(['slotId','barberId','date','time','service','price','duration'])&&request.resource.data.price is number&&request.resource.data.price>=0&&request.resource.data.duration is number&&request.resource.data.duration>0;
  allow update: if signed()&&(
  (resource.data.clientId==request.auth.uid&&request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])&&request.resource.data.status=='cancelled')
  ||(staff()&&(role('admin')||resource.data.barberId==request.auth.uid)&&request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])&&request.resource.data.status=='completed'));
