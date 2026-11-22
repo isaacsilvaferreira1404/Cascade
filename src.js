@@ -130,22 +130,34 @@ function management(){
  el('serviceForm').onsubmit=async e=>{e.preventDefault();try{await data('services','POST',{name:el('serviceName').value,price:Number(el('servicePrice').value),duration:Number(el('serviceDuration').value)});await reload();management();message('Procedimento cadastrado')}catch(err){message(err.message)}};
 }
 const weekdays=['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
+const nextSevenDays=()=>Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()+i);const date=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);const day=new Date(date+'T12:00:00Z').getUTCDay();return {date,day,label:weekdays[day].split('-')[0]+' '+date.slice(8,10)}});
 async function weeklyEditor(){
  if(!barber()&&!admin())return;
- const target=admin()?el('weeklyBarber')?.value:user.uid;
- if(!target)return;
+ const barberId=admin()?el('weeklyBarber')?.value:user.uid;
+ if(!barberId)return;
  const container=el('weeklyEditor');
- container.innerHTML='<p>Carregando os sete dias...</p>';
- try{
-  const schedule=await api('/api/data?collection=weeklySchedule&barberId='+encodeURIComponent(target));
-  container.innerHTML='<p class="muted">Selecione os botões dos horários em que o barbeiro trabalha em cada dia. Os botões destacados ficam disponíveis para agendamento semanal.</p>'+weekdays.map((day,i)=>'<div class="weekly-day"><h4>'+day+'</h4><div class="weekly-hours">'+Array.from({length:16},(_,n)=>{const hour=String(n+6).padStart(2,'0')+':00';return '<button type="button" class="weekly-hour '+((schedule.days?.[i]||[]).includes(hour)?'selected':'')+'" data-day="'+i+'" data-hour="'+hour+'" aria-pressed="'+((schedule.days?.[i]||[]).includes(hour)?'true':'false')+'">'+hour+'</button>'}).join('')+'</div></div>').join('')+'<button id="saveWeekly" type="button">Salvar semana de trabalho</button>';
-  container.querySelectorAll('.weekly-hour').forEach(b=>b.onclick=()=>{b.classList.toggle('selected');b.setAttribute('aria-pressed',String(b.classList.contains('selected')))});
-  el('saveWeekly').onclick=async()=>{const days={};for(let i=0;i<7;i++)days[i]=[...container.querySelectorAll('.weekly-hour.selected[data-day="'+i+'"]')].map(b=>b.dataset.hour);try{await api('/api/data?collection=weeklySchedule','POST',{barberId:target,days});message('Semana de trabalho salva no Firestore.')}catch(err){message(err.message)}};
- }catch(err){container.innerHTML='<p>'+esc(err.message)+'</p>'}
+ const days=nextSevenDays();let selectedDate=days[0].date;
+ container.innerHTML='<p class="muted">Escolha o dia e marque os horários de trabalho. Salvar disponibiliza imediatamente os horários no Firestore.</p><div class="day-tabs" id="staffDayTabs">'+days.map(d=>'<button type="button" class="day-tab" data-day-date="'+d.date+'">'+esc(d.label)+'</button>').join('')+'</div><div id="staffDayHours"></div>';
+ async function showDate(date){
+  selectedDate=date;
+  container.querySelectorAll('[data-day-date]').forEach(b=>{const active=b.dataset.dayDate===date;b.classList.toggle('selected',active);b.setAttribute('aria-pressed',String(active))});
+  const target=el('staffDayHours');target.innerHTML='<p>Carregando horários...</p>';
+  try{
+   const [day,week]=await Promise.all([api('/api/data?collection=daySchedule&barberId='+encodeURIComponent(barberId)+'&date='+date),api('/api/data?collection=weeklySchedule&barberId='+encodeURIComponent(barberId))]);
+   if(selectedDate!==date||!el('staffDayHours'))return;
+   const weekday=new Date(date+'T12:00:00Z').getUTCDay();
+   const selectedHours=day.configured?day.hours:(week.days?.[weekday]||[]);
+   target.innerHTML='<h4>Horários de '+esc(days.find(d=>d.date===date)?.label||date)+'</h4><div class="weekly-hours">'+Array.from({length:16},(_,n)=>{const hour=String(n+6).padStart(2,'0')+':00';const active=selectedHours.includes(hour);return '<button type="button" class="weekly-hour '+(active?'selected':'')+'" data-hour="'+hour+'" aria-pressed="'+active+'">'+hour+'</button>'}).join('')+'</div><button id="saveDayHours" type="button">Salvar horários deste dia</button><p id="daySaveStatus" role="status"></p>';
+   target.querySelectorAll('[data-hour]').forEach(b=>b.onclick=()=>{b.classList.toggle('selected');b.setAttribute('aria-pressed',String(b.classList.contains('selected')))});
+   el('saveDayHours').onclick=async()=>{const button=el('saveDayHours');button.disabled=true;try{const hours=[...target.querySelectorAll('.weekly-hour.selected')].map(b=>b.dataset.hour);await api('/api/data?collection=daySchedule','POST',{barberId,date,hours});el('daySaveStatus').textContent=hours.length?'Horários salvos e disponíveis para os clientes.':'Dia salvo sem horários disponíveis.';}catch(err){el('daySaveStatus').textContent=err.message}finally{button.disabled=false}};
+  }catch(err){target.innerHTML='<p>'+esc(err.message)+'</p>'}
+ }
+ container.querySelectorAll('[data-day-date]').forEach(b=>b.onclick=()=>showDate(b.dataset.dayDate));
+ showDate(selectedDate);
 }
 function staff(){
  if(!barber()&&!admin()){home();return}
- shell('<section class="section"><div class="eyebrow">EQUIPE CASCADE</div><h2>Horários e atendimentos</h2><form id="slotForm" class="panel">'+(admin()?'<label>Barbeiro<select id="slotBarber">'+users.filter(x=>x.role==='barber').map(u=>'<option value="'+esc(u.id)+'">'+esc(u.name)+'</option>').join('')+'</select></label>':'')+'<label>Data<input id="slotDate" type="date" min="'+today()+'" required></label><label>Início<input id="slotTime" type="time" required></label><label>Duração (min)<input id="slotDuration" type="number" min="15" max="720" value="480" required></label><button>Disponibilizar horário</button></form><h3>Agenda semanal · 7 dias</h3>'+(admin()?'<label>Escolha o barbeiro<select id="weeklyBarber">'+users.filter(x=>x.role==='barber').map(u=>'<option value="'+esc(u.id)+'">'+esc(u.name)+'</option>').join('')+'</select></label>':'')+'<div id="weeklyEditor" class="panel"></div><h3>Horários avulsos</h3><div id="slotList"></div><h3>Agendamentos</h3><div id="appointmentList"></div><p id="notice"></p></section>');
+ shell('<section class="section"><div class="eyebrow">EQUIPE CASCADE</div><h2>Horários e atendimentos</h2><form id="slotForm" class="panel">'+(admin()?'<label>Barbeiro<select id="slotBarber">'+users.filter(x=>x.role==='barber').map(u=>'<option value="'+esc(u.id)+'">'+esc(u.name)+'</option>').join('')+'</select></label>':'')+'<label>Data<input id="slotDate" type="date" min="'+today()+'" required></label><label>Início<input id="slotTime" type="time" required></label><label>Duração (min)<input id="slotDuration" type="number" min="15" max="720" value="480" required></label><button>Disponibilizar horário</button></form><h3>Configurar horários por dia · próximos 7 dias</h3>'+(admin()?'<label>Escolha o barbeiro<select id="weeklyBarber">'+users.filter(x=>x.role==='barber').map(u=>'<option value="'+esc(u.id)+'">'+esc(u.name)+'</option>').join('')+'</select></label>':'')+'<div id="weeklyEditor" class="panel"></div><h3>Horários avulsos</h3><div id="slotList"></div><h3>Agendamentos</h3><div id="appointmentList"></div><p id="notice"></p></section>');
  weeklyEditor();if(el('weeklyBarber'))el('weeklyBarber').onchange=weeklyEditor;
  el('slotForm').onsubmit=async e=>{e.preventDefault();try{await data('slots','POST',{barberId:admin()?el('slotBarber').value:user.uid,date:el('slotDate').value,time:el('slotTime').value,duration:Number(el('slotDuration').value)});await reload();staff();message('Horário cadastrado')}catch(err){message(err.message)}};
  el('slotList').innerHTML=slots.filter(s=>admin()||s.barberId===user.uid).map(s=>'<div class="panel">'+esc(s.date)+' '+esc(s.time)+' · '+s.duration+'min <button class="secondary" data-slot="'+esc(s.id)+'" data-active="'+(s.active!==false)+'">'+(s.active!==false?'Desativar':'Ativar')+'</button></div>').join('');
