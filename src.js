@@ -49,26 +49,44 @@ function home(){
  if(user)dashboard();
 }
 function choose(id){
- const service=id.startsWith('default:')?null:services.find(x=>x.id===id);
- if(!service){el('booking').innerHTML='<div class="panel"><p>Este serviço ainda não foi cadastrado pela administração no Firestore. Solicite o cadastro para liberar agendamentos.</p></div>';return}
+ const service=services.find(x=>x.id===id&&x.active!==false);
+ if(!service){el('booking').innerHTML='<div class="panel"><p>Procedimento ainda não disponível para agendamento.</p></div>';return}
  if(!user){login();return}
- selected={serviceId:id};const barbers=users.filter(x=>x.role==='barber');
- el('booking').innerHTML='<div class="panel"><h3>'+esc(service.name)+'</h3><label>Barbeiro<select id="bookBarber"><option value="">Selecione</option>'+barbers.map(b=>'<option value="'+esc(b.id)+'">'+esc(b.name)+'</option>').join('')+'</select></label><label>Data<input id="bookDate" type="date" min="'+today()+'"></label><div id="available"></div><p id="notice"></p></div>';
- el('bookBarber').onchange=available;el('bookDate').onchange=available;
+ selected={serviceId:id,barberId:null};
+ const barbers=users.filter(x=>x.role==='barber');
+ el('booking').innerHTML='<div class="panel booking-panel"><div class="eyebrow">SEU AGENDAMENTO</div><h3>'+esc(service.name)+'</h3><p class="muted">'+money(service.price)+' · '+service.duration+' minutos</p><h4>1. Escolha seu barbeiro</h4><div class="barbergrid">'+barbers.map(b=>'<button type="button" class="barber-card" data-book-barber="'+esc(b.id)+'"><span class="barber-avatar">✂</span><b>'+esc(b.name)+'</b><small>Ver horários disponíveis</small></button>').join('')+'</div>'+(barbers.length?'':'<p>Nenhum barbeiro cadastrado no Firestore.</p>')+'<div id="dateSelection" hidden><h4>2. Escolha a data</h4><input id="bookDate" type="date" min="'+today()+'"></div><div id="available"></div><p id="notice" role="status"></p></div>';
+ document.querySelectorAll('[data-book-barber]').forEach(button=>button.onclick=()=>{
+  selected.barberId=button.dataset.bookBarber;
+  document.querySelectorAll('[data-book-barber]').forEach(b=>b.classList.toggle('selected',b===button));
+  el('dateSelection').hidden=false;
+  el('bookDate').value=today();
+  available();
+ });
+ el('bookDate').onchange=available;
+ el('booking').scrollIntoView({behavior:'smooth',block:'start'});
 }
-function available(){
- const barberId=el('bookBarber').value,date=el('bookDate').value,service=services.find(x=>x.id===selected?.serviceId);
- if(!barberId||!date||!service)return;
- const times=[];
- const occupied=appointments.filter(a=>a.barberId===barberId&&a.date===date&&a.status!=='cancelled');
- const relevant=slots.filter(s=>s.barberId===barberId&&s.date===date&&s.active!==false);
- for(const s of relevant)for(let t=min(s.time);t+service.duration<=min(s.time)+s.duration;t+=15){
-  if(occupied.some(a=>t<min(a.time)+a.duration&&t+service.duration>min(a.time)))continue;
-  if(date===today()){const now=new Intl.DateTimeFormat('en-GB',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'}).format(new Date());if(t<=min(now))continue}
-  const time=String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');times.push({slotId:s.id,time});
- }
- el('available').innerHTML=times.length?'<h4>Horários disponíveis</h4><div class="times">'+times.map((x,i)=>'<button class="time" data-time="'+i+'">'+x.time+'</button>').join('')+'</div>':'<p>Nenhum horário disponível.</p>';
- document.querySelectorAll('[data-time]').forEach(b=>b.onclick=async()=>{const x=times[Number(b.dataset.time)];b.disabled=true;try{await data('appointments','POST',{slotId:x.slotId,time:x.time,serviceId:selected.serviceId});await reload();home();message('Agendamento confirmado!')}catch(err){b.disabled=false;message(err.message)}});
+let availabilityRequest=0;
+async function available(){
+ const target=el('available');
+ if(!target||!selected?.barberId)return;
+ const date=el('bookDate').value,service=services.find(x=>x.id===selected.serviceId);
+ if(!date||!service)return;
+ const request=++availabilityRequest;
+ target.innerHTML='<h4>3. Escolha seu horário</h4><p>Consultando agenda do barbeiro...</p>';
+ try{
+  const url='/api/data?collection=availability&barberId='+encodeURIComponent(selected.barberId)+'&date='+encodeURIComponent(date)+'&serviceId='+encodeURIComponent(selected.serviceId);
+  const times=await api(url);
+  if(request!==availabilityRequest||!el('available'))return;
+  target.innerHTML='<h4>3. Escolha seu horário</h4><p class="muted">Os horários ocupados são pulados automaticamente conforme a duração dos procedimentos.</p>'+(times.length?'<div class="times">'+times.map((x,i)=>'<button type="button" class="time" data-time="'+i+'">'+esc(x.time)+'</button>').join('')+'</div>':'<p>Nenhum horário livre nesta data. Escolha outro dia.</p>');
+  target.querySelectorAll('[data-time]').forEach(button=>button.onclick=async()=>{
+   const choice=times[Number(button.dataset.time)];
+   target.querySelectorAll('[data-time]').forEach(b=>b.disabled=true);
+   try{
+    await data('appointments','POST',{slotId:choice.slotId,time:choice.time,serviceId:selected.serviceId});
+    await reload();home();message('Agendamento confirmado para '+choice.time+'!');
+   }catch(err){message(err.message);await available()}
+  });
+ }catch(err){if(request===availabilityRequest&&el('available'))target.innerHTML='<p>Não foi possível consultar horários: '+esc(err.message)+'</p>'}
 }
 function dashboard(){
  el('dashboard').innerHTML='<div class="panel"><h3>Meus agendamentos</h3>'+(appointments.length?appointments.map(a=>'<p>'+esc(a.service)+' · '+esc(a.date)+' '+esc(a.time)+' · '+esc(a.status)+' '+(a.status==='scheduled'?'<button class="secondary" data-cancel="'+esc(a.id)+'">Cancelar</button>':'')+'</p>').join(''):'<p>Nenhum agendamento.</p>')+'</div>'+(barber()?'<button id="staff">Painel do barbeiro</button>':'');
