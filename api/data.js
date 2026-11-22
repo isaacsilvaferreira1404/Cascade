@@ -26,17 +26,17 @@ export default async function handler(req,res){
    const [service,barber,windows,appointmentsForDay]=await Promise.all([
     db.collection('services').doc(serviceId).get(),
     db.collection('users').doc(barberId).get(),
-    db.collection('slots').where('barberId','==',barberId).where('date','==',date).get(),
-    db.collection('appointments').where('barberId','==',barberId).where('date','==',date).get()
+    db.collection('slots').where('barberId','==',barberId).get(),
+    db.collection('appointments').where('barberId','==',barberId).get()
    ]);
    if(!service.exists||service.data().active===false||!barber.exists||barber.data().role!=='barber')return bad(res,404,'Procedimento ou barbeiro indisponível');
    const duration=Number(service.data().duration);
-   const occupied=appointmentsForDay.docs.map(d=>d.data()).filter(a=>a.status!=='cancelled').map(a=>({start:minutes(a.time),end:minutes(a.time)+Number(a.duration||0)})).sort((a,b)=>a.start-b.start);
+   const occupied=appointmentsForDay.docs.map(d=>d.data()).filter(a=>a.date===date&&a.status!=='cancelled').map(a=>({start:minutes(a.time),end:minutes(a.time)+Number(a.duration||0)})).sort((a,b)=>a.start-b.start);
    const todayBR=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
    const nowBR=new Intl.DateTimeFormat('en-GB',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date());
    const output=[],seen=new Set();
    for(const w of windows.docs){
-    const slot=w.data();if(slot.active===false||!validTime(slot.time))continue;
+    const slot=w.data();if(slot.date!==date||slot.active===false||!validTime(slot.time))continue;
     const start=minutes(slot.time),end=start+Number(slot.duration);
     for(let t=start;t+duration<=end&&t<1440;){
      const collision=occupied.find(a=>t<a.end&&t+duration>a.start);
