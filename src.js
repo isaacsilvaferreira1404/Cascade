@@ -115,7 +115,9 @@ function shell(content) {
   app.innerHTML =
     '<header><div class="brand"><span>✂</span> CAS<span>CADE</span><small>BARBEARIA · DESDE 2016</small></div><nav><a href="#" id="home">Início</a><a href="#club">Cascade Club</a><button id="authBtn">' +
     (user ? "Minha conta" : "Entrar") +
-    "</button></nav></header><main>" +
+    "</button>" +
+    (profile?.role === "admin" ? '<button id="manageLoginsBtn" type="button">Gerenciar logins</button>' : "") +
+    "</nav></header><main>" +
     content +
     "</main><footer>CASCADE BARBEARIA · ESTILO E PRECISÃO</footer>";
   el("home").onclick = (e) => {
@@ -123,6 +125,7 @@ function shell(content) {
     render();
   };
   el("authBtn").onclick = () => (user ? accountView() : authView());
+  if (el("manageLoginsBtn")) el("manageLoginsBtn").onclick = () => { accountView(); el("openAdmin")?.click(); el("adminLogins")?.scrollIntoView({behavior:"smooth",block:"start"}); };
 }
 function authView() {
   loginScreen({
@@ -693,11 +696,32 @@ function staff() {
 }
 function admin() {
   el("admin").innerHTML =
-    '<p>Administrador: gerencie barbeiros, procedimentos e assinaturas.</p><h4>Configurações do administrador</h4><p class="muted">Permissões salvas no Firestore. Apenas administradores podem modificar funções de outros usuários.</p><form id="adminAccessForm"><label>E-mail da conta cadastrada<input id="adminAccessEmail" type="email" required placeholder="E-mail do usuário"></label><label>Permissão<select id="adminAccessValue"><option value="true">Administrador (true)</option><option value="false">Usuário comum (false)</option></select></label><button type="submit">Salvar permissão</button><p id="adminAccessStatus" role="status"></p></form><h4>Novo procedimento</h4><form id="serviceForm"><input id="serviceName" placeholder="Nome do procedimento" required><input id="servicePrice" type="number" min="0" step="0.01" placeholder="Preço em R$" required><input id="serviceDuration" type="number" min="5" max="480" placeholder="Duração em minutos" required><button>Adicionar procedimento</button></form><h4>Definir barbeiro e jornada</h4><form id="roles"><input type="email" id="target" placeholder="E-mail do usuário já cadastrado" required><select id="role"><option value="client">Cliente</option><option value="barber">Barbeiro</option></select><input type="time" id="workStart" value="08:00"><input type="time" id="workEnd" value="20:00"><select id="club"><option value="none">Sem clube</option>' +
+    '<p>Administrador: gerencie barbeiros, procedimentos e assinaturas.</p><section id="adminLogins"><h4>Gerenciar logins</h4><p class="muted">Contas cadastradas no Firestore. Senhas não são exibidas.</p><button type="button" id="listLogins">Carregar contas</button><div id="loginList" role="status"></div></section><h4>Configurações do administrador</h4><p class="muted">Permissões salvas no Firestore. Apenas administradores podem modificar funções de outros usuários.</p><form id="adminAccessForm"><label>E-mail da conta cadastrada<input id="adminAccessEmail" type="email" required placeholder="E-mail do usuário"></label><label>Permissão<select id="adminAccessValue"><option value="true">Administrador (true)</option><option value="false">Usuário comum (false)</option></select></label><button type="submit">Salvar permissão</button><p id="adminAccessStatus" role="status"></p></form><h4>Novo procedimento</h4><form id="serviceForm"><input id="serviceName" placeholder="Nome do procedimento" required><input id="servicePrice" type="number" min="0" step="0.01" placeholder="Preço em R$" required><input id="serviceDuration" type="number" min="5" max="480" placeholder="Duração em minutos" required><button>Adicionar procedimento</button></form><h4>Definir barbeiro e jornada</h4><form id="roles"><input type="email" id="target" placeholder="E-mail do usuário já cadastrado" required><select id="role"><option value="client">Cliente</option><option value="barber">Barbeiro</option></select><input type="time" id="workStart" value="08:00"><input type="time" id="workEnd" value="20:00"><select id="club"><option value="none">Sem clube</option>' +
     Object.entries(plans)
       .map(([k, p]) => '<option value="' + k + '">' + p.name + "</option>")
       .join("") +
     '</select><label><input type="checkbox" id="active"> Assinatura ativa</label><button>Atualizar cadastro</button></form><p class="muted">Use este formulário para alterar a função ou assinatura de uma conta existente.</p>';
+  el("listLogins").onclick = async () => {
+    const target = el("loginList");
+    target.textContent = "Carregando contas...";
+    try {
+      const result = await getDocs(collection(db, "users"));
+      const entries = result.docs.map((entry) => ({id:entry.id, ...entry.data()}));
+      target.innerHTML = entries.length
+        ? '<div class="login-entries">' + entries.map((entry) =>
+            '<div class="panel" style="padding:12px;margin:8px 0"><strong>' + esc(entry.name || "Sem nome") + '</strong><p class="muted">' + esc(entry.email || "Sem e-mail") + '</p><p>' + (entry.isAdmin === true ? "Administrador" : entry.role === "barber" ? "Barbeiro" : "Cliente") + '</p><button type="button" class="secondary" data-login-email="' + esc(entry.email || "") + '">Editar permissão</button></div>'
+          ).join("") + '</div>'
+        : '<p>Nenhuma conta cadastrada no Firestore.</p>';
+      target.querySelectorAll("[data-login-email]").forEach((button) => {
+        button.onclick = () => {
+          el("adminAccessEmail").value = button.dataset.loginEmail;
+          el("adminAccessForm").scrollIntoView({behavior:"smooth",block:"center"});
+        };
+      });
+    } catch (err) {
+      target.textContent = "Não foi possível carregar as contas: " + (err.message || "Erro de acesso.");
+    }
+  };
   el("adminAccessForm").onsubmit = async (e) => {
     e.preventDefault();
     const status = el("adminAccessStatus");
