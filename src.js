@@ -764,9 +764,14 @@ if (!ready) {
       render();
       if (chosenService) selectService(chosenService);
       if (u.email === adminEmail && !u.emailVerified) accountView();
-    } catch {
+    } catch (error) {
+      const message = error.code === "permission-denied"
+        ? "Você entrou na conta, mas o Firestore não permitiu carregar sua agenda. Peça à administração para verificar as regras de acesso."
+        : error.code === "unavailable"
+          ? "O banco de dados está temporariamente inacessível. Verifique sua conexão e tente novamente."
+          : "Não foi possível carregar a agenda. Tente novamente.";
       shell(
-        '<section class="panel narrow"><h2>Agenda indisponível</h2><p>Não foi possível carregar seus dados do Firebase.</p><button id="retry">Tentar novamente</button> <button class="secondary" id="exit">Sair</button></section>',
+        `<section class="panel narrow"><h2>Agenda indisponível</h2><p role="alert">${message}</p><button id="retry">Tentar novamente</button> <button class="secondary" id="exit">Sair</button></section>`,
       );
       el("retry").onclick = () => location.reload();
       el("exit").onclick = () => signOut(auth);

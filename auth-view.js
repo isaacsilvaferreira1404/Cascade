@@ -42,13 +42,18 @@ export function loginScreen({ shell, auth, register }) {
           "auth/email-already-in-use":
             "Este e-mail já tem uma conta. Entre ou recupere sua senha.",
           "auth/invalid-credential": "E-mail ou senha incorretos.",
+          "auth/network-request-failed": "Não foi possível alcançar o serviço de login. Verifique sua conexão e tente novamente.",
+          "auth/operation-not-allowed": "O login por e-mail e senha está desativado no Firebase Authentication. Avise a administração.",
+          "auth/unauthorized-domain": "Este endereço do site não está autorizado para autenticação. Avise a administração.",
+          "auth/user-disabled": "Esta conta foi desativada. Entre em contato com a administração.",
+          "auth/invalid-api-key": "A configuração de autenticação do site é inválida. Avise a administração.",
           "auth/weak-password": "Escolha uma senha mais forte.",
           "auth/too-many-requests":
             "Muitas tentativas. Tente novamente mais tarde.",
         };
         status.textContent =
           messages[err.code] ||
-          "Não foi possível acessar o Firebase. Tente novamente.";
+          `Não foi possível concluir a solicitação. Código: ${err.code || "indisponível"}.`;
       } finally {
         button.disabled = false;
       }
