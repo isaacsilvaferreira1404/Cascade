@@ -20,6 +20,8 @@ async function api(path,method='GET',body){
 const data=(collection,method='GET',body,id)=>api('/api/data?collection='+encodeURIComponent(collection)+(id?'&id='+encodeURIComponent(id):''),method,body);
 const auth=(action,method='GET',body)=>api('/api/auth?action='+action,method,body);
 function shell(html){
+ document.getElementById('bookingOverlay')?.remove();
+ document.body.classList.remove('booking-modal-open');
  app.innerHTML='<header><div class="brand">✂ CAS<span>CADE</span><small>BARBEARIA · DESDE 2016</small></div><nav><button id="homeNav" class="secondary">Início</button><button id="accountNav">'+(user?'Minha conta':'Entrar')+'</button>'+(admin()?'<button id="adminNav">Gerenciar logins</button>':'')+'</nav></header><main>'+html+'</main><footer>CASCADE BARBEARIA · ESTILO E PRECISÃO</footer>';
  el('homeNav').onclick=home;el('accountNav').onclick=()=>user?account():login();if(el('adminNav'))el('adminNav').onclick=management;
 }
@@ -49,6 +51,8 @@ function home(){
  if(user)dashboard();
 }
 function choose(id){
+ document.getElementById('bookingOverlay')?.remove();
+ document.body.classList.remove('booking-modal-open');
  const service=services.find(x=>x.id===id&&x.active!==false);
  if(!service){el('booking').innerHTML='<div class="panel"><p>Procedimento ainda não disponível para agendamento.</p></div>';return}
  if(!user){login();return}
@@ -63,7 +67,23 @@ function choose(id){
   available();
  });
  el('bookDate').onchange=available;
- el('booking').scrollIntoView({behavior:'smooth',block:'start'});
+ const overlay=document.createElement('div');
+ overlay.className='booking-overlay';
+ overlay.id='bookingOverlay';
+ overlay.setAttribute('role','dialog');
+ overlay.setAttribute('aria-modal','true');
+ overlay.setAttribute('aria-label','Agendar procedimento');
+ const panel=el('booking').firstElementChild;
+ const back=document.createElement('button');
+ back.type='button';back.className='secondary booking-back';back.textContent='← Voltar';
+ back.onclick=()=>{overlay.remove();document.body.classList.remove('booking-modal-open');selected=null;};
+ panel.prepend(back);
+ overlay.appendChild(panel);
+ document.body.appendChild(overlay);
+ document.body.classList.add('booking-modal-open');
+ back.focus();
+ overlay.addEventListener('click',e=>{if(e.target===overlay)back.click()});
+
 }
 let availabilityRequest=0;
 async function available(){
