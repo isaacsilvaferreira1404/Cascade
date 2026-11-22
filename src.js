@@ -22,8 +22,8 @@ const auth=(action,method='GET',body)=>api('/api/auth?action='+action,method,bod
 function shell(html){
  document.getElementById('bookingOverlay')?.remove();
  document.body.classList.remove('booking-modal-open');
- app.innerHTML='<header><div class="brand">✂ CAS<span>CADE</span><small>BARBEARIA · DESDE 2016</small></div><nav><button id="homeNav" class="secondary">Início</button><button id="accountNav">'+(user?'Minha conta':'Entrar')+'</button>'+(admin()?'<button id="adminNav">Gerenciar logins</button>':'')+'</nav></header><main>'+html+'</main><footer>CASCADE BARBEARIA · ESTILO E PRECISÃO</footer>';
- el('homeNav').onclick=home;el('accountNav').onclick=()=>user?account():login();if(el('adminNav'))el('adminNav').onclick=management;
+ app.innerHTML='<header><div class="brand">✂ CAS<span>CADE</span><small>BARBEARIA · DESDE 2016</small></div><nav><button id="homeNav" class="secondary">Início</button><button id="accountNav">'+(user?'Minha conta':'Entrar')+'</button>'+(admin()?'<button id="adminNav">Gerenciar logins</button>':'')+(barber()||admin()?'<button id="scheduleNav">Cadastrar horários</button>':'')+'</nav></header><main>'+html+'</main><footer>CASCADE BARBEARIA · ESTILO E PRECISÃO</footer>';
+ el('homeNav').onclick=home;el('accountNav').onclick=()=>user?account():login();if(el('adminNav'))el('adminNav').onclick=management;if(el('scheduleNav'))el('scheduleNav').onclick=staff;
 }
 function message(t){if(el('notice'))el('notice').textContent=t}
 async function reload(){
@@ -111,12 +111,12 @@ async function available(){
  }catch(err){if(request===availabilityRequest&&el('available'))target.innerHTML='<p>Não foi possível consultar horários: '+esc(err.message)+'</p>'}
 }
 function dashboard(){
- el('dashboard').innerHTML='<div class="panel"><h3>Meus agendamentos</h3>'+(appointments.length?appointments.map(a=>'<p>'+esc(a.service)+' · '+esc(a.date)+' '+esc(a.time)+' · '+esc(a.status)+' '+(a.status==='scheduled'?'<button class="secondary" data-cancel="'+esc(a.id)+'">Cancelar</button>':'')+'</p>').join(''):'<p>Nenhum agendamento.</p>')+'</div>'+(barber()?'<button id="staff">Painel do barbeiro</button>':'');
+ el('dashboard').innerHTML='<div class="panel"><h3>Meus agendamentos</h3>'+(appointments.length?appointments.map(a=>'<p>'+esc(a.service)+' · '+esc(a.date)+' '+esc(a.time)+' · '+esc(a.status)+' '+(a.status==='scheduled'?'<button class="secondary" data-cancel="'+esc(a.id)+'">Cancelar</button>':'')+'</p>').join(''):'<p>Nenhum agendamento.</p>')+'</div>'+((barber()||admin())?'<button id="staff">Cadastrar horários</button>':'');
  document.querySelectorAll('[data-cancel]').forEach(b=>b.onclick=async()=>{try{await data('appointments','PATCH',{status:'cancelled'},b.dataset.cancel);await reload();home()}catch(err){message(err.message)}});
  if(el('staff'))el('staff').onclick=staff;
 }
 function account(){
- shell('<section class="section account-section"><div class="panel account-card"><div class="eyebrow">PERFIL CASCADE</div><h2>Minha conta</h2><p>'+esc(user.email)+'</p><form id="profile"><label>Nome<input id="profileName" required minlength="2" value="'+esc(user.name)+'"></label><label>Telefone<input id="profilePhone" maxlength="20" value="'+esc(user.phone||'')+'"></label><button>Salvar</button></form><p id="notice"></p>'+(admin()?'<button id="manage">Gerenciar logins e administração</button>':'')+(barber()?'<button id="staff">Painel do barbeiro</button>':'')+'<button id="logout" class="secondary">Sair</button></div></section>');
+ shell('<section class="section account-section"><div class="panel account-card"><div class="eyebrow">PERFIL CASCADE</div><h2>Minha conta</h2><p>'+esc(user.email)+'</p><form id="profile"><label>Nome<input id="profileName" required minlength="2" value="'+esc(user.name)+'"></label><label>Telefone<input id="profilePhone" maxlength="20" value="'+esc(user.phone||'')+'"></label><button>Salvar</button></form><p id="notice"></p>'+(admin()?'<button id="manage">Gerenciar logins e administração</button>':'')+((barber()||admin())?'<button id="staff">Cadastrar horários</button>':'')+'<button id="logout" class="secondary">Sair</button></div></section>');
  el('profile').onsubmit=async e=>{e.preventDefault();try{await data('users','PATCH',{name:el('profileName').value,phone:el('profilePhone').value},user.uid);user.name=el('profileName').value;message('Dados salvos')}catch(err){message(err.message)}};
  if(el('manage'))el('manage').onclick=management;if(el('staff'))el('staff').onclick=staff;
  el('logout').onclick=async()=>{await auth('logout','POST');user=null;users=[];services=[];slots=[];appointments=[];home()};
@@ -145,10 +145,10 @@ async function weeklyEditor(){
   container.querySelectorAll('[data-day-date]').forEach(b=>{const active=b.dataset.dayDate===date;b.classList.toggle('selected',active);b.setAttribute('aria-pressed',String(active))});
   const target=el('staffDayHours');target.innerHTML='<p>Carregando horários...</p>';
   try{
-   const [day,week]=await Promise.all([api('/api/data?collection=daySchedule&barberId='+encodeURIComponent(barberId)+'&date='+date),api('/api/data?collection=weeklySchedule&barberId='+encodeURIComponent(barberId))]);
+   const day=await api('/api/data?collection=daySchedule&barberId='+encodeURIComponent(barberId)+'&date='+date);
    if(selectedDate!==date||!el('staffDayHours'))return;
    const weekday=new Date(date+'T12:00:00Z').getUTCDay();
-   const selectedHours=day.configured?day.hours:(week.days?.[weekday]||[]);
+   const selectedHours=day.hours||[];
    target.innerHTML='<h4>Horários de '+esc(days.find(d=>d.date===date)?.label||date)+'</h4><div class="weekly-hours">'+Array.from({length:16},(_,n)=>{const hour=String(n+6).padStart(2,'0')+':00';const active=selectedHours.includes(hour);return '<button type="button" class="weekly-hour '+(active?'selected':'')+'" data-hour="'+hour+'" aria-pressed="'+active+'">'+hour+'</button>'}).join('')+'</div><button id="saveDayHours" type="button">Salvar horários deste dia</button><p id="daySaveStatus" role="status"></p>';
    target.querySelectorAll('[data-hour]').forEach(b=>b.onclick=()=>{b.classList.toggle('selected');b.setAttribute('aria-pressed',String(b.classList.contains('selected')))});
    el('saveDayHours').onclick=async()=>{const button=el('saveDayHours');button.disabled=true;try{const hours=[...target.querySelectorAll('.weekly-hour.selected')].map(b=>b.dataset.hour);await api('/api/data?collection=daySchedule','POST',{barberId,date,hours});el('daySaveStatus').textContent=hours.length?'Horários salvos e disponíveis para os clientes.':'Dia salvo sem horários disponíveis.';}catch(err){el('daySaveStatus').textContent=err.message}finally{button.disabled=false}};
