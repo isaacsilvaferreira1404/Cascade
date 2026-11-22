@@ -167,7 +167,7 @@ function accountView() {
       '"><button type="submit">Salvar alterações</button></form><p id="notice" role="status"></p>' +
       (profile?.role === "admin"
         ? '<div class="account-actions"><button id="openAdmin">Administração</button></div>'
-        : "") +
+        : user.email?.toLowerCase() === adminEmail ? '<div class="account-actions"><button id="activateAdmin" type="button">Ativar meu acesso de administrador</button></div>' : "") +
       '<div class="account-actions"><button id="logout" class="secondary">Sair da conta</button><button id="backHome" class="secondary">Voltar ao início</button></div></div><div id="adminModal" class="admin-modal" hidden></div></section>',
   );
   el("profileForm").onsubmit = async (e) => {
@@ -207,6 +207,23 @@ function accountView() {
       }
     };
   }
+  if (el("activateAdmin")) el("activateAdmin").onclick = async () => {
+    const button = el("activateAdmin");
+    button.disabled = true;
+    notice("Verificando sua conta...");
+    try {
+      const token = await user.getIdToken(true);
+      const response = await fetch("/api/admin-bootstrap", {method:"POST",headers:{"Authorization":"Bearer "+token}});
+      const result = await response.json();
+      if (!response.ok) throw Error(result.error || "Falha na ativação");
+      await load();
+      accountView();
+      notice("Acesso administrativo ativado com sucesso.");
+    } catch (err) {
+      notice(err.message || "Não foi possível ativar o acesso.");
+      button.disabled = false;
+    }
+  };
   el("logout").onclick = () => signOut(auth);
   el("backHome").onclick = render;
   if (el("openAdmin"))
