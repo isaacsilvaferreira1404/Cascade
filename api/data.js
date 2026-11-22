@@ -18,8 +18,38 @@ export default async function handler(req,res){
   const mine=await db.collection('users').doc(uid).get();if(!mine.exists)return bad(res,401,'Conta não encontrada');
   const me=mine.data(),isAdmin=me.isAdmin===true&&me.role==='admin',isBarber=me.role==='barber';
   const col=req.query.collection,id=req.query.id;
-  if(!['users','services','slots','appointments'].includes(col))return bad(res,400,'Coleção inválida');
+  if(!['users','services','slots','appointments','availability'].includes(col))return bad(res,400,'Coleção inválida');
   const ref=db.collection(col),body=req.body||{};
+  if(col==='availability'&&req.method==='GET'){
+   const barberId=req.query.barberId,date=req.query.date,serviceId=req.query.serviceId;
+   if(typeof barberId!=='string'||barberId.length>150||!validDate(date)||typeof serviceId!=='string'||serviceId.length>150)return bad(res,400,'Selecione barbeiro, data e procedimento');
+   const [service,barber,windows,appointmentsForDay]=await Promise.all([
+    db.collection('services').doc(serviceId).get(),
+    db.collection('users').doc(barberId).get(),
+    db.collection('slots').where('barberId','==',barberId).where('date','==',date).get(),
+    db.collection('appointments').where('barberId','==',barberId).where('date','==',date).get()
+   ]);
+   if(!service.exists||service.data().active===false||!barber.exists||barber.data().role!=='barber')return bad(res,404,'Procedimento ou barbeiro indisponível');
+   const duration=Number(service.data().duration);
+   const occupied=appointmentsForDay.docs.map(d=>d.data()).filter(a=>a.status!=='cancelled').map(a=>({start:minutes(a.time),end:minutes(a.time)+Number(a.duration||0)})).sort((a,b)=>a.start-b.start);
+   const todayBR=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+   const nowBR=new Intl.DateTimeFormat('en-GB',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(new Date());
+   const output=[],seen=new Set();
+   for(const w of windows.docs){
+    const slot=w.data();if(slot.active===false||!validTime(slot.time))continue;
+    const start=minutes(slot.time),end=start+Number(slot.duration);
+    for(let t=start;t+duration<=end&&t<1440;){
+     const collision=occupied.find(a=>t<a.end&&t+duration>a.start);
+     if(collision){t=Math.ceil(collision.end/5)*5;continue}
+     if(date>=todayBR&&(date!==todayBR||t>minutes(nowBR))){
+      const time=String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');
+      if(!seen.has(time)){seen.add(time);output.push({slotId:w.id,time})}
+     }
+     t+=15;
+    }
+   }
+   return res.json(output.sort((a,b)=>a.time.localeCompare(b.time)));
+  }
   if(req.method==='GET'){
    if(id){const d=await ref.doc(id).get();if(!d.exists)return bad(res,404,'Não encontrado');const x=d.data();if(col==='users'&&!isAdmin&&id!==uid&&x.role!=='barber')return bad(res,403,'Acesso negado');if(col==='appointments'&&!isAdmin&&x.clientId!==uid&&x.barberId!==uid)return bad(res,403,'Acesso negado');return res.json({id:d.id,...clean(x)})}
    if(col==='users'&&isAdmin){const docs=await ref.limit(500).get();return res.json(docs.docs.map(d=>({id:d.id,...clean(d.data())})))}
