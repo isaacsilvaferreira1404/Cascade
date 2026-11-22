@@ -58,15 +58,17 @@ function choose(id){
  if(!user){login();return}
  selected={serviceId:id,barberId:null};
  const barbers=users.filter(x=>x.role==='barber');
- el('booking').innerHTML='<div class="panel booking-panel"><div class="eyebrow">SEU AGENDAMENTO</div><h3>'+esc(service.name)+'</h3><p class="muted">'+money(service.price)+' · '+service.duration+' minutos</p><h4>1. Escolha seu barbeiro</h4><div class="barbergrid">'+barbers.map(b=>'<button type="button" class="barber-card" data-book-barber="'+esc(b.id)+'"><span class="barber-avatar">✂</span><b>'+esc(b.name)+'</b><small>Ver horários disponíveis</small></button>').join('')+'</div>'+(barbers.length?'':'<p>Nenhum barbeiro cadastrado no Firestore.</p>')+'<div id="dateSelection" hidden><h4>2. Escolha a data</h4><input id="bookDate" type="date" min="'+today()+'"></div><div id="available"></div><p id="notice" role="status"></p></div>';
+ el('booking').innerHTML='<div class="panel booking-panel"><div class="eyebrow">SEU AGENDAMENTO</div><h3>'+esc(service.name)+'</h3><p class="muted">'+money(service.price)+' · '+service.duration+' minutos</p><h4>1. Escolha seu barbeiro</h4><div class="barbergrid">'+barbers.map(b=>'<button type="button" class="barber-card" data-book-barber="'+esc(b.id)+'"><span class="barber-avatar">✂</span><b>'+esc(b.name)+'</b><small>Ver horários disponíveis</small></button>').join('')+'</div>'+(barbers.length?'':'<p>Nenhum barbeiro cadastrado no Firestore.</p>')+'<div id="dateSelection" hidden><h4>2. Escolha o dia</h4><div class="day-tabs" id="clientDayTabs"></div><input id="bookDate" type="hidden"></div><div id="available"></div><p id="notice" role="status"></p></div>';
  document.querySelectorAll('[data-book-barber]').forEach(button=>button.onclick=()=>{
   selected.barberId=button.dataset.bookBarber;
   document.querySelectorAll('[data-book-barber]').forEach(b=>b.classList.toggle('selected',b===button));
   el('dateSelection').hidden=false;
-  el('bookDate').value=today();
-  available();
+  const days=nextSevenDays();
+  el('clientDayTabs').innerHTML=days.map(d=>'<button type="button" class="day-tab" data-book-date="'+d.date+'">'+esc(d.label)+'</button>').join('');
+  document.querySelectorAll('[data-book-date]').forEach(b=>b.onclick=()=>{el('bookDate').value=b.dataset.bookDate;document.querySelectorAll('[data-book-date]').forEach(x=>x.classList.toggle('selected',x===b));available()});
+  el('clientDayTabs').querySelector('[data-book-date]')?.click();
  });
- el('bookDate').onchange=available;
+ 
  const overlay=document.createElement('div');
  overlay.className='booking-overlay';
  overlay.id='bookingOverlay';
@@ -97,7 +99,7 @@ async function available(){
   const url='/api/data?collection=availability&barberId='+encodeURIComponent(selected.barberId)+'&date='+encodeURIComponent(date)+'&serviceId='+encodeURIComponent(selected.serviceId);
   const times=await api(url);
   if(request!==availabilityRequest||!el('available'))return;
-  target.innerHTML='<h4>3. Escolha seu horário</h4><p class="muted">Os horários ocupados são pulados automaticamente conforme a duração dos procedimentos.</p>'+(times.length?'<div class="times">'+times.map((x,i)=>'<button type="button" class="time" data-time="'+i+'">'+esc(x.time)+'</button>').join('')+'</div>':'<p>Nenhum horário livre nesta data. Escolha outro dia.</p>');
+  target.innerHTML='<h4>3. Escolha seu horário</h4><p class="muted">Os horários ocupados são pulados automaticamente conforme a duração dos procedimentos.</p>'+(times.length?'<div class="times">'+times.map((x,i)=>'<button type="button" class="time" data-time="'+i+'">'+esc(x.time)+'</button>').join('')+'</div>':'<p class="sold-out" role="status">Os horários deste dia acabaram ou ainda não foram disponibilizados. Escolha outro dia.</p>');
   target.querySelectorAll('[data-time]').forEach(button=>button.onclick=async()=>{
    const choice=times[Number(button.dataset.time)];
    target.querySelectorAll('[data-time]').forEach(b=>b.disabled=true);
