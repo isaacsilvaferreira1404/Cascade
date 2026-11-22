@@ -3,12 +3,12 @@ service cloud.firestore {
  match /databases/{database}/documents {
  function signed(){return request.auth!=null;}
  function me(){return get(/databases/$(database)/documents/users/$(request.auth.uid));}
- function role(r){return signed()&&(r=='admin' ? request.auth.token.admin==true : me().data.role==r);}
+ function role(r){return signed()&&(r=='admin' ? (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && me().data.get('isAdmin',false)==true) : me().data.role==r);}
  function staff(){return role('admin')||role('barber');}
  match /users/{id}{
  allow read: if signed()&&(request.auth.uid==id||role('admin')||resource.data.role=='barber');
- allow create: if signed()&&request.auth.uid==id&&request.resource.data.role=='client'&&request.resource.data.club=='none'&&request.resource.data.clubActive==false;
- allow update: if role('admin')||(signed()&&request.auth.uid==id&&request.resource.data.role==resource.data.role&&request.resource.data.club==resource.data.club&&request.resource.data.clubActive==resource.data.clubActive);
+ allow create: if signed()&&request.auth.uid==id&&request.resource.data.role=='client'&&request.resource.data.isAdmin==false&&request.resource.data.club=='none'&&request.resource.data.clubActive==false;
+ allow update: if role('admin')||(signed()&&request.auth.uid==id&&request.resource.data.role==resource.data.role&&request.resource.data.isAdmin==resource.data.get('isAdmin',false)&&request.resource.data.club==resource.data.club&&request.resource.data.clubActive==resource.data.clubActive);
  }
  match /services/{id}{
  allow read: if true;
