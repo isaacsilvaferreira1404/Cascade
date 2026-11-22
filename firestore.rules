@@ -10,6 +10,10 @@ service cloud.firestore {
  allow create: if signed()&&request.auth.uid==id&&request.resource.data.role=='client'&&request.resource.data.club=='none'&&request.resource.data.clubActive==false;
  allow update: if role('admin')||(signed()&&request.auth.uid==id&&request.resource.data.role==resource.data.role&&request.resource.data.club==resource.data.club&&request.resource.data.clubActive==resource.data.clubActive);
  }
+ match /services/{id}{
+ allow read: if true;
+ allow create,update,delete: if role('admin');
+ }
  match /slots/{id}{
  allow read: if signed();
  allow create: if staff()&&(role('admin')||request.resource.data.barberId==request.auth.uid)&&request.resource.data.booked==false;
