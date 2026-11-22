@@ -20,7 +20,7 @@ export default async function handler(req,res){
    tx.set(db.collection('users').doc(uid),{name:typeof name==='string'&&name.trim().length>1?name.trim().slice(0,80):'Administrador',email:owner,role:'admin',isAdmin:true,phone:'',club:'none',clubActive:false,passwordHash});
    tx.create(setup,{completedAt:admin.firestore.FieldValue.serverTimestamp()});
    const defaults=[['Corte',40,60],['Sobrancelha',10,10],['Corte + sobrancelha',50,60],['Barba desenhada',30,40],['Corte e barba',65,80],['Corte + barba + sobrancelha',70,80],['Penteado',30,30],['Luzes',80,30],['Platinado',125,30],['Relaxamento',30,15],['Botox',70,60],['Progressiva',80,90],['Nudreds',60,80],['Lavagem',20,10],['Skin care',25,30],['Pezinho',15,15],['Hidratação',25,20],['Dedoliss',35,30],['Coloração',35,40],['Fio a fio',110,60]];
-   defaults.forEach(([name,price,duration])=>tx.create(db.collection('services').doc('default-'+name.toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').replace(/[^a-z0-9]+/g,'-')),{name,price,duration,active:true}));
+   defaults.forEach(([name,price,duration])=>tx.create(db.collection('services').doc('default-'+name.toLowerCase().normalize('NFD').replace(/\p{M}/gu,'').replace(/[^a-z0-9]+/g,'-')),{name,price,duration,active:true}));
   });
   return res.status(201).json({ok:true,message:'Administrador criado. Entre com seu e-mail e nova senha.'});
  }catch(e){console.error('owner setup',e.code||e.message);return res.status(e.message==='A ativação já foi concluída'?409:500).json({error:e.message==='A ativação já foi concluída'?e.message:'Não foi possível ativar'})}
