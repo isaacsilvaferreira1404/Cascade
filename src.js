@@ -7,6 +7,13 @@ let user=null,users=[],services=[],slots=[],appointments=[],selected=null;
 const el=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>Number(n).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+const clubCovers=(member,service)=>{
+ if(member?.clubActive!==true)return false;
+ const name=String(service||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
+ const cut=name==='corte',beard=name==='barba'||name==='barba desenhada',combo=name==='corte e barba'||name==='corte + barba';
+ return member.club==='cabelo'?cut:member.club==='barba'?beard:member.club==='completo'?(cut||beard||combo):false;
+};
+const bookingValue=a=>a.clubCovered===true?'Club Cascade':money(a.price);
 const admin=()=>user?.isAdmin===true&&user?.role==='admin';
 const barber=()=>user?.role==='barber';
 const min=t=>Number(t.slice(0,2))*60+Number(t.slice(3,5));
@@ -117,7 +124,7 @@ function dashboard(){
   el('markedHours').onclick=()=>staff(true);return;
  }
  const mine=appointments.filter(a=>a.clientId===user.uid).sort((a,b)=>(a.date+' '+a.time).localeCompare(b.date+' '+b.time));
- el('dashboard').innerHTML='<div class="panel"><h3>Meus horários</h3>'+(mine.length?mine.map(a=>'<article class="my-booking"><strong>'+esc(a.service)+'</strong><p><b>Dia:</b> '+esc(a.date)+' · <b>Horário:</b> '+esc(a.time)+'</p><p><b>Valor:</b> '+money(a.price)+' · <b>Duração:</b> '+esc(a.duration)+' minutos</p><p><b>Status:</b> '+esc(a.status==='scheduled'?'Agendado':a.status==='completed'?'Concluído':'Cancelado')+'</p>'+(a.status==='scheduled'?'<button class="secondary" data-cancel="'+esc(a.id)+'">Cancelar agendamento</button>':'')+'</article>').join(''):'<p>Nenhum horário marcado nesta conta.</p>')+'</div>';
+ el('dashboard').innerHTML='<div class="panel"><h3>Meus horários</h3>'+(mine.length?mine.map(a=>'<article class="my-booking"><strong>'+esc(a.service)+'</strong><p><b>Dia:</b> '+esc(a.date)+' · <b>Horário:</b> '+esc(a.time)+'</p><p><b>Valor:</b> '+bookingValue(a)+' · <b>Duração:</b> '+esc(a.duration)+' minutos</p><p><b>Status:</b> '+esc(a.status==='scheduled'?'Agendado':a.status==='completed'?'Concluído':'Cancelado')+'</p>'+(a.status==='scheduled'?'<button class="secondary" data-cancel="'+esc(a.id)+'">Cancelar agendamento</button>':'')+'</article>').join(''):'<p>Nenhum horário marcado nesta conta.</p>')+'</div>';
  document.querySelectorAll('[data-cancel]').forEach(b=>b.onclick=async()=>{try{await data('appointments','PATCH',{status:'cancelled'},b.dataset.cancel);await reload();home()}catch(err){message(err.message)}});
 }
 function account(){
@@ -178,7 +185,7 @@ function staff(appointmentsOnly=false){
  renderStaffAppointments(false);
 }
 function renderStaffAppointments(appointmentsOnly){
- el('appointmentList').innerHTML=appointments.length?appointments.slice().sort((a,b)=>(a.date+' '+a.time).localeCompare(b.date+' '+b.time)).map(a=>'<article class="panel appointment-card"><div class="appointment-heading"><strong>'+esc(a.clientName||'Cliente')+'</strong><span class="appointment-status">'+esc(a.status==='scheduled'?'Agendado':a.status==='completed'?'Concluído':'Cancelado')+'</span></div><p><b>Dia:</b> '+esc(a.date)+' · <b>Horário:</b> '+esc(a.time)+'</p><p><b>Procedimento:</b> '+esc(a.service)+'</p><p><b>Valor:</b> '+money(a.price)+' · <b>Duração:</b> '+esc(a.duration)+' minutos</p>'+(a.clientPhone?'<p><b>Telefone:</b> '+esc(a.clientPhone)+'</p>':'')+(admin()?'<p><b>Barbeiro:</b> '+esc(users.find(u=>u.id===a.barberId)?.name||'Barbeiro')+'</p>':'')+(a.status==='scheduled'?'<button type="button" data-complete="'+esc(a.id)+'">Concluir atendimento</button>':'')+'</article>').join(''):'<p class="muted">Nenhum cliente agendado até o momento.</p>';
+ el('appointmentList').innerHTML=appointments.length?appointments.slice().sort((a,b)=>(a.date+' '+a.time).localeCompare(b.date+' '+b.time)).map(a=>'<article class="panel appointment-card"><div class="appointment-heading"><strong>'+esc(a.clientName||'Cliente')+'</strong><span class="appointment-status">'+esc(a.status==='scheduled'?'Agendado':a.status==='completed'?'Concluído':'Cancelado')+'</span></div><p><b>Dia:</b> '+esc(a.date)+' · <b>Horário:</b> '+esc(a.time)+'</p><p><b>Procedimento:</b> '+esc(a.service)+'</p><p><b>Valor:</b> '+bookingValue(a)+' · <b>Duração:</b> '+esc(a.duration)+' minutos</p>'+(a.clientPhone?'<p><b>Telefone:</b> '+esc(a.clientPhone)+'</p>':'')+(admin()?'<p><b>Barbeiro:</b> '+esc(users.find(u=>u.id===a.barberId)?.name||'Barbeiro')+'</p>':'')+(a.status==='scheduled'?'<button type="button" data-complete="'+esc(a.id)+'">Concluir atendimento</button>':'')+'</article>').join(''):'<p class="muted">Nenhum cliente agendado até o momento.</p>';
  document.querySelectorAll('[data-complete]').forEach(b=>b.onclick=async()=>{try{await data('appointments','PATCH',{status:'completed'},b.dataset.complete);await reload();staff(appointmentsOnly)}catch(err){message(err.message)}});
 }
 window.addEventListener('hashchange',()=>{if(location.hash==='#configurar-administrador')ownerSetup()});
