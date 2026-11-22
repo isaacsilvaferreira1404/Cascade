@@ -12,14 +12,40 @@ const error=e=>{console.error('Cascade API',e.code||e.message);return 'Erro ao p
 export default async function handler(req,res){
  res.setHeader('Cache-Control','no-store');
  try{
-  if(!['GET','POST','PATCH','DELETE'].includes(req.method))return bad(res,405,'Método inválido');
+  if(!['GET','POST','PATCH','DELETE','PUT'].includes(req.method))return bad(res,405,'Método inválido');
   if(req.method!=='GET'&&req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)return bad(res,403,'Origem inválida');
   const uid=session(req);if(!uid)return bad(res,401,'Entre na conta');
   const mine=await db.collection('users').doc(uid).get();if(!mine.exists)return bad(res,401,'Conta não encontrada');
   const me=mine.data(),isAdmin=me.isAdmin===true&&me.role==='admin',isBarber=me.role==='barber';
   const col=req.query.collection,id=req.query.id;
-  if(!['users','services','slots','appointments','availability'].includes(col))return bad(res,400,'Coleção inválida');
+  if(!['users','services','slots','appointments','availability','weeklySchedule'].includes(col))return bad(res,400,'Coleção inválida');
   const ref=db.collection(col),body=req.body||{};
+  if(col==='weeklySchedule'){
+   if(req.method==='GET'){
+    const target=req.query.barberId||uid;
+    const profile=await db.collection('users').doc(target).get();
+    if(!profile.exists||profile.data().role!=='barber')return bad(res,404,'Barbeiro não encontrado');
+    const doc=await db.collection('weeklySchedules').doc(target).get();
+    return res.json({barberId:target,days:doc.data()?.days||{}});
+   }
+   if(req.method==='PUT'||req.method==='POST'){
+    if(!isAdmin&&!isBarber)return bad(res,403,'Apenas equipe');
+    const target=body.barberId||uid;
+    if(!isAdmin&&target!==uid)return bad(res,403,'Sem permissão');
+    const profile=await db.collection('users').doc(target).get();
+    if(!profile.exists||profile.data().role!=='barber')return bad(res,404,'Barbeiro não encontrado');
+    const days=body.days;
+    if(!days||typeof days!=='object'||Array.isArray(days)||Object.keys(days).some(k=>!/^[0-6]$/.test(k)))return bad(res,400,'Semana inválida');
+    const cleaned={};
+    for(let day=0;day<7;day++){
+     const hours=days[day]||[];
+     if(!Array.isArray(hours)||hours.length>24||hours.some(t=>!validTime(t)||minutes(t)%60!==0))return bad(res,400,'Horários inválidos');
+     cleaned[day]=[...new Set(hours)].sort();
+    }
+    await db.collection('weeklySchedules').doc(target).set({barberId:target,days:cleaned,updatedAt:admin.firestore.FieldValue.serverTimestamp()});
+    return res.json({ok:true});
+   }
+  }
   if(col==='availability'&&req.method==='GET'){
    const barberId=req.query.barberId,date=req.query.date,serviceId=req.query.serviceId;
    if(typeof barberId!=='string'||barberId.length>150||!validDate(date)||typeof serviceId!=='string'||serviceId.length>150)return bad(res,400,'Selecione barbeiro, data e procedimento');
@@ -30,6 +56,9 @@ export default async function handler(req,res){
     db.collection('appointments').where('barberId','==',barberId).get()
    ]);
    if(!service.exists||service.data().active===false||!barber.exists||barber.data().role!=='barber')return bad(res,404,'Procedimento ou barbeiro indisponível');
+   const weekly=await db.collection('weeklySchedules').doc(barberId).get();
+   const weekday=new Date(date+'T12:00:00Z').getUTCDay();
+   const weeklyHours=weekly.data()?.days?.[weekday]||[];
    const duration=Number(service.data().duration);
    const occupied=appointmentsForDay.docs.map(d=>d.data()).filter(a=>a.date===date&&a.status!=='cancelled').map(a=>({start:minutes(a.time),end:minutes(a.time)+Number(a.duration||0)})).sort((a,b)=>a.start-b.start);
    const todayBR=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
@@ -47,6 +76,14 @@ export default async function handler(req,res){
      }
      t+=15;
     }
+   }
+   for(const hour of weeklyHours){
+    if(!validTime(hour))continue;
+    const start=minutes(hour);
+    if(occupied.some(a=>start<a.end&&start+duration>a.start))continue;
+    if(date<todayBR||(date===todayBR&&start<=minutes(nowBR)))continue;
+    const time=hour;
+    if(!seen.has(time)){seen.add(time);output.push({slotId:'weekly:'+barberId+':'+date+':'+time,time})}
    }
    return res.json(output.sort((a,b)=>a.time.localeCompare(b.time)));
   }
@@ -97,12 +134,20 @@ export default async function handler(req,res){
    if(req.method==='POST'){
     const {slotId,time,serviceId}=body;
     if(typeof slotId!=='string'||!validTime(time)||typeof serviceId!=='string')return bad(res,400,'Dados inválidos');
-    const slotRef=db.collection('slots').doc(slotId),serviceRef=db.collection('services').doc(serviceId),appointmentRef=ref.doc();
+    const weeklyMatch=/^weekly:([^:]+):(\\d{4}-\\d{2}-\\d{2}):(\\d{2}:\\d{2})$/.exec(slotId);
+    const slotRef=weeklyMatch?null:db.collection('slots').doc(slotId),serviceRef=db.collection('services').doc(serviceId),appointmentRef=ref.doc();
     await db.runTransaction(async tx=>{
-     const [slot,service]=await Promise.all([tx.get(slotRef),tx.get(serviceRef)]);
-     if(!slot.exists||!service.exists||slot.data().active===false||service.data().active===false)throw Error('Serviço ou horário indisponível');
-     const s=slot.data(),v=service.data(),start=minutes(time),duration=v.duration;
-     if(start<minutes(s.time)||start+duration>minutes(s.time)+s.duration)throw Error('Horário incompatível');
+     const scheduleRef=weeklyMatch?db.collection('weeklySchedules').doc(weeklyMatch[1]):null;
+     const [slot,service]=await Promise.all([tx.get(slotRef||scheduleRef),tx.get(serviceRef)]);
+     if(!slot.exists||!service.exists||(!weeklyMatch&&slot.data().active===false)||service.data().active===false)throw Error('Serviço ou horário indisponível');
+     let s=slot.data(),v=service.data(),start=minutes(time),duration=v.duration;
+     if(weeklyMatch){
+      const [barberId,date,hour]=weeklyMatch.slice(1);
+      const day=new Date(date+'T12:00:00Z').getUTCDay();
+      if(time!==hour||!s.days?.[day]?.includes(hour))throw Error('Horário não autorizado');
+      s={barberId,date,time:hour,duration:60};
+     }
+     if(start<minutes(s.time)||(!weeklyMatch&&start+duration>minutes(s.time)+s.duration))throw Error('Horário incompatível');
      const locks=Array.from({length:Math.ceil(duration/5)},(_,i)=>db.collection('bookingLocks').doc(s.barberId+'_'+s.date+'_'+(start+i*5)));
      const docs=await Promise.all(locks.map(x=>tx.get(x)));if(docs.some(x=>x.exists))throw Error('Horário ocupado');
      tx.create(appointmentRef,{clientId:uid,barberId:s.barberId,slotId,date:s.date,time,service:v.name,price:me.clubActive===true&&me.club==='cabelo'&&v.name==='Corte'?0:v.price,duration,status:'scheduled',createdAt:admin.firestore.FieldValue.serverTimestamp()});
